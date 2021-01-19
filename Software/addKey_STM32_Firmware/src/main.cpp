@@ -5,43 +5,36 @@
 #include <SPI.h> //SD and MFRC522
 #include <Keyboard.h>
 #include <Mouse.h>
-
-
-void readKeys();
-void readKeyFile(String filename);
-void doShiftKey(int keyVal);
-void stopMouse();
-int8_t rotaryEncoder(bool a, bool b);
-int readJoyAxis(int thisAxis);
+#include <main.h>
 
 
 
 
 
-/* How many shift register chips are daisy-chained.
-*/
-#define NUMBER_OF_SHIFT_CHIPS   3
-#define DATA_WIDTH   NUMBER_OF_SHIFT_CHIPS * 8
 
-#define ploadPin         PA8  // SH_LD
-#define dataPin          PA9 // Q7
-#define clockPin         PA10 //CLK
 
-#define XAxisPin PA0    // select the input pin for the potentiometer
+
+// Needed for Shift Register
+#define NUMBER_OF_SHIFT_CHIPS   3 // How many shift register chips are daisy-chained.
+#define DATA_WIDTH              NUMBER_OF_SHIFT_CHIPS * 8
+
+#define ploadPin                PA8  // SH_LD
+#define dataPin                 PA9 // Q7
+#define clockPin                PA10 //CLK
+
+// Needed for Joystick
+#define XAxisPin PA0    
 #define YAxisPin PA1
 
 
-///FOR NEXT VERSION this will be Not PA4 anymore
+///FOR  VERSION > 2.1 this will be Not PA4 anymore
 #define SD_SS PA4//10 
 #define RFID_SS PB4
 #define RFID_RST PB3
 
 #define RFID_ON 1
 
-
 HardwareSerial debug(USART2);
-
-
 
 int joyValX;
 int joyValY;
@@ -64,7 +57,6 @@ uint32_t elapsedTime;
 
 #include <SD.h>
 File myFile;
-
 
 // RFID
 #if (RFID_ON) 
