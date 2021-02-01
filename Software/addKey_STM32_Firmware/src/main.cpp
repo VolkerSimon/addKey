@@ -3,7 +3,7 @@
 
 
 #define isInDebug 1
-#define useRFID 0
+#define useRFID 1
 #define useJoystick 0
 #define useRotary 0
 #define useSD 0
@@ -52,7 +52,7 @@ int MouseSteps=24;
 int threshold = 1;
 int center = MouseSteps / 2;
 
-char lastfilename[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+char lastfilename[32]={};
 
 unsigned int keysPressed=0;
 uint32_t elapsedTime;
@@ -60,7 +60,11 @@ uint32_t elapsedTime;
 #if (useSD)
   #include <SD.h>
   File myFile;
+  
+  
 #endif
+
+
 // RFID
 #if (useRFID) 
   #include <MFRC522.h>
@@ -69,6 +73,7 @@ uint32_t elapsedTime;
   uint8_t pageAddr = 0x01;
   byte RFIDbuffer[64]={0,0,0,0};
   byte RFIDbuffer_size = sizeof(RFIDbuffer);
+  char filename[32]={};
 #endif
 
 
@@ -94,23 +99,18 @@ byte keyBoard1[numOfMaxKeyDefinitions*(numPressedAtOnce+3)]={
     ,3, 0, 0, 3, 118, 1
     ,5, 0, 0, 0, 177, 1
     ,6, 0, 0, 0, 97, 0
-    ,7, 0, 0, 0, 98, 10
+    ,7, 0, 0, 0, 98, 50
     ,8, 0, 0, 0, 99, 1
     ,9, 0, 0, 0, 100, 2
 
   };
 int actNumOfKeyDefinitions=10;
 
-
-
-
 //****************************************************
 void setup() 
 {
-
-  
-   
- 
+  __HAL_RCC_AFIO_CLK_ENABLE();
+  __HAL_AFIO_REMAP_SWJ_NOJTAG();
 
   pinMode(ploadPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
@@ -140,13 +140,13 @@ void setup()
 
   #if (useRFID) 
       //MFRC RFID Setup
-      mfrc522.PCD_Init(RFID_SS, RFID_RST);        // Init MFRC522 card
+      debug.print("MFRC522 Init");
+      mfrc522.PCD_Init(RFID_SS, RFID_RST);
+      
+      debug.println("Done!");        // Init MFRC522 card
   #endif
 
-  elapsedTime=millis();
-  Keyboard.begin();
-  Mouse.begin();
-
+  
   //get joyoffsets
   #if (useJoystick)
     JoyOffY = 512-analogRead(YAxisPin);
@@ -156,6 +156,12 @@ void setup()
   #ifdef isInDebug
     debug.println("Init Done!");
   #endif
+
+
+  elapsedTime=millis();
+  Keyboard.begin();
+  Mouse.begin();
+
 
 }
 
@@ -168,14 +174,19 @@ void loop()
  
   #if (useRFID)
   //char filename[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    //debug.print(millis());
+    //debug.print("  -   ");
+    //debug.println(elapsedTime+1000);
     if (millis()>elapsedTime+1000)
     {
       elapsedTime=millis();
     //Check if RFID changed and setup new one
     //***************************************
       // Look for new cards
+      
       if ( mfrc522.PICC_IsNewCardPresent()) 
       {
+        debug.println("Card present!");
         if (  mfrc522.PICC_ReadCardSerial())
         {
           // Read data ***************************************************
@@ -201,7 +212,7 @@ void loop()
                     debug.println(filename);
                   #endif
 
-                  readKeyFile(filename);
+                  //readKeyFile(filename);
                   memcpy(lastfilename,filename,32);
 
                   
@@ -268,9 +279,9 @@ void loop()
     }
   }
 
-
-  //IF we hit the three buttons on the right and an additional one it will load a file with the number of the additional key
+ 
   #if (useSD)
+  //IF we hit the three buttons on the right and an additional one it will load a file with the number of the additional key
     if (readByte==4)
     {
       if (ReadInputBuffer[1]==16 && ReadInputBuffer[2]==17 && ReadInputBuffer[1]==18)
@@ -316,16 +327,15 @@ void loop()
           
           if (keyBoard1[tPos+5]==0)
           {
-            doSomething(tPos);
+            doKeys(tPos);
             Release=1;
-            
           }
           else if (keyBoard1[tPos+5]==1)
           {
             if (!keyIsPressed[ArrayCounter])
             {
               keyIsPressed[ArrayCounter]=1;
-              doSomething(tPos);
+              doKeys(tPos);
             }
           }else if (keyBoard1[tPos+5]==2)
           {
@@ -337,8 +347,7 @@ void loop()
             if (keyDelay[ArrayCounter]<millis())
             {
               keyDelay[ArrayCounter]=millis()+keyBoard1[tPos+5]*10;//Set the next time this key is allowed to be pressed
-              //Here we zuweisen all functions
-              doSomething(tPos);
+              doKeys(tPos);
               Release=1;
             }
           }
@@ -356,12 +365,14 @@ void loop()
   }else{
     stopMouse();
     //Nothing is pressed ... so check if there was a onRelase Key and  remove all flags
+    
     for (int ArrayCounter=0;ArrayCounter<actNumOfKeyDefinitions;ArrayCounter++)
     {
       tPos=ArrayCounter*6;
       if (keyBoard1[tPos+5]==2 && keyIsPressed[ArrayCounter]==1)
       {
-        doSomething(tPos);
+        doKeys(tPos);
+        Keyboard.releaseAll();
       }
       keyIsPressed[ArrayCounter]=0;
     }
@@ -370,13 +381,12 @@ void loop()
 
 
 
-void doSomething(int tPos){
+void doKeys(int tPos){
   int stdKey=0;
   int shiftKey=0;
 
   //Check for special shift key
   shiftKey=keyBoard1[tPos+3];
-              
   if (shiftKey)
   {  
     doShiftKey(shiftKey);
