@@ -6,8 +6,8 @@
 #define useRFID 1
 #define useJoystick 0
 #define useRotary 0
-#define useSD 0
-
+#define useSD 1
+  
 #include <Arduino.h>
 #include <SPI.h> //SD and MFRC522
 #include <Keyboard.h>
@@ -15,23 +15,34 @@
 #include <main.h>
 
 // Needed for Shift Register
-#define NUMBER_OF_SHIFT_CHIPS   3 // How many shift register chips are daisy-chained.
-#define DATA_WIDTH              NUMBER_OF_SHIFT_CHIPS * 8
-
+#define bitsToRead              3 * 8 //3 Shift register with 8 bit
 #define ploadPin                PA8   // SH_LD
 #define dataPin                 PA9   // Q7
 #define clockPin                PA10  //CLK
 
-///FOR  VERSION < 2.2 this will be PA4 
+/// For Test
+#define SD_SS PB3
+
+#if (useRFID)
+  #define RFID_SS PB4
+  #define RFID_RST PA4
+#endif
+
+///FOR  VERSION => 2.2 this will be PA4 
+/// Version <2.2 will be
+/*Original
 #define SD_SS PA4
 
 #if (useRFID)
   #define RFID_SS PB4
   #define RFID_RST PB3
 #endif
+*/
 
 
-HardwareSerial debug(USART2);
+#if (isInDebug)
+  HardwareSerial debug(USART2);
+#endif
 
 #if (useJoystick)
   #define XAxisPin PA0    
@@ -60,7 +71,7 @@ uint32_t elapsedTime;
 #if (useSD)
   #include <SD.h>
   File myFile;
-  
+  //Sd2Card myCard;
   
 #endif
 
@@ -68,7 +79,7 @@ uint32_t elapsedTime;
 // RFID
 #if (useRFID) 
   #include <MFRC522.h>
-  MFRC522 mfrc522(RFID_SS, RFID_RST);   // SS,RST 
+  MFRC522 mfrc522(RFID_SS, RFID_RST);   // SS,RESET 
   MFRC522::StatusCode status; //variable to get card status
   uint8_t pageAddr = 0x01;
   byte RFIDbuffer[64]={0,0,0,0};
@@ -86,29 +97,31 @@ unsigned long keyDelay[numOfMaxKeyDefinitions];
 unsigned long keyIsPressed[numOfMaxKeyDefinitions];
 
 /*
-The key definition has the following struct:
+The keyarray definition has the following struct:
 Key1,key2,Key3,F1,F2,Delay
-everything needs to be ordered by Key1 then Key2 then Key3
+everything needs to be ordered by Key1 ascending then Key2 descending then Key3 descending
 if not it will not work!!!!!
 */
-byte keyBoard1[numOfMaxKeyDefinitions*(numPressedAtOnce+3)]={
-     1, 18, 0, 3, 122, 1
-    ,1, 0, 0, 3, 99, 1
-    ,2, 18, 0, 3, 121, 1
-    ,2, 0, 0, 3, 120, 1
-    ,3, 0, 0, 3, 118, 1
-    ,5, 0, 0, 0, 177, 1
-    ,6, 0, 0, 0, 97, 0
-    ,7, 0, 0, 0, 98, 50
-    ,8, 0, 0, 0, 99, 1
-    ,9, 0, 0, 0, 100, 2
-
-  };
+byte keyBoard1[numOfMaxKeyDefinitions*(numPressedAtOnce+3)]=
+{
+  1, 18, 0, 3, 122, 1 //CTRL
+  ,1, 0, 0, 3, 99, 1
+  ,2, 18, 0, 3, 121, 1
+  ,2, 0, 0, 3, 120, 1
+  ,3, 0, 0, 3, 118, 1
+  ,5, 0, 0, 0, 177, 1
+  ,6, 0, 0, 0, 97, 0
+  ,7, 0, 0, 0, 98, 50
+  ,8, 0, 0, 0, 99, 1
+  ,9, 0, 0, 0, 100, 2
+};
 int actNumOfKeyDefinitions=10;
 
 //****************************************************
 void setup() 
 {
+  
+  //Diasble JTAG because I Use PB3 for RFID_RST
   __HAL_RCC_AFIO_CLK_ENABLE();
   __HAL_AFIO_REMAP_SWJ_NOJTAG();
 
@@ -118,32 +131,42 @@ void setup()
   digitalWrite(clockPin, LOW);
   digitalWrite(ploadPin, HIGH);
 
+  Keyboard.begin();
+  Mouse.begin();
+
+
   
   #if(isInDebug)
-    debug.begin(9600);
-    delay(500);
-    while (!debug){delay(10);}
-    debug.println("Start!!!");
+    debug.begin(115200);
+ 
+    debug.println("Start!!! 1");
   #endif
 
   //SDCARD
   #if (useSD)
-    if (!SD.begin(SD_SS)) 
-    {
-      debug.println("No SD FOUND!");
-    } 
-    #ifdef isInDebug
-      debug.println("REadFile");
-    #endif
-    readKeyFile("default.key");
-  #endif
+      readKeyFile("default.key");  
+  /*myCard.init();
 
+  myCard.init(SD_SS);
+   switch (myCard.type()) {
+    case SD_CARD_TYPE_SD1:
+      debug.println("SD1");
+      break;
+    case SD_CARD_TYPE_SD2:
+      debug.println("SD2");
+      break;
+    case SD_CARD_TYPE_SDHC:
+      debug.println("SDHC");
+      break;
+    default:
+      debug.println("Unknown");
+  }
+*/
+  #endif
+  
   #if (useRFID) 
       //MFRC RFID Setup
-      debug.print("MFRC522 Init");
       mfrc522.PCD_Init(RFID_SS, RFID_RST);
-      
-      debug.println("Done!");        // Init MFRC522 card
   #endif
 
   
@@ -153,15 +176,11 @@ void setup()
     JoyOffX = 512-analogRead(XAxisPin);
   #endif
 
-  #ifdef isInDebug
-    debug.println("Init Done!");
-  #endif
-
-
   elapsedTime=millis();
-  Keyboard.begin();
-  Mouse.begin();
-
+ 
+  #if (isInDebug)
+    debug.println("Init Complete!");
+  #endif
 
 }
 
@@ -170,23 +189,21 @@ void loop()
 {
    unsigned int orgKeys=0;
    int tPos;
-
  
   #if (useRFID)
-  //char filename[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-    //debug.print(millis());
-    //debug.print("  -   ");
-    //debug.println(elapsedTime+1000);
+    // We are checking RFID only every second
     if (millis()>elapsedTime+1000)
     {
       elapsedTime=millis();
     //Check if RFID changed and setup new one
     //***************************************
-      // Look for new cards
-      
+      // Look for new TFID
       if ( mfrc522.PICC_IsNewCardPresent()) 
       {
-        debug.println("Card present!");
+        #if (isInDebug)
+          debug.print("New RFID Found!");
+        #endif              
+
         if (  mfrc522.PICC_ReadCardSerial())
         {
           // Read data ***************************************************
@@ -194,7 +211,7 @@ void loop()
               status = (MFRC522::StatusCode) mfrc522.MIFARE_Read(7, RFIDbuffer,  &RFIDbuffer_size);
               if (status != MFRC522::STATUS_OK) 
               {
-                #ifdef isInDebug
+                #if (isInDebug)
                   debug.print(F("MIFARE_Read() failed: "));
                   debug.println(mfrc522.GetStatusCodeName(status));
                 #endif              
@@ -205,25 +222,31 @@ void loop()
                   filename[dr]=char(RFIDbuffer[dr]);
                   dr++;
                 }
+                mfrc522.PICC_HaltA();
+                mfrc522.PCD_StopCrypto1();
+                
+                readKeyFile(filename);
+
+/*
                 if (strcmp(filename,lastfilename))
                 {
-                  #ifdef isInDebug
+                  #if (isInDebug)
                     debug.print("Would read: ");
                     debug.println(filename);
                   #endif
-
-                  //readKeyFile(filename);
+                  delay(100);
+                  readKeyFile(filename);
                   memcpy(lastfilename,filename,32);
-
-                  
                 }else{
-                  #ifdef isInDebug
+                  
+                  #if (isInDebug)
                     debug.println("No Change!");
                     debug.println(filename);
                     debug.println(lastfilename);
                     debug.println();
                   #endif
                 }
+*/                
               }              
         }
       } 
@@ -246,15 +269,21 @@ void loop()
     bitWrite(orgKeys,x+8,bitRead(keysPressed,x+8));
     bitWrite(orgKeys,x+16,bitRead(keysPressed,x));
   }
-  
-
-  //So we have a left right turn equal to a button press
+  /*
+    #if (isInDebug)
+      for (int x=0; x<8*3; x++)debug.print(bitRead(orgKeys,x));
+      debug.println();
+    #endif
+  */
+  //We want to have a left right turn equal to a button press
   #if (useRotery)
     int a=rotaryEncoder(!bitRead(orgKeys,18),!bitRead(orgKeys,19));
     if (a==-1){
       bitWrite(orgKeys,18,0);
       bitWrite(orgKeys,19,1);
-    }else if (a==1){
+    }
+    else if (a==1)
+    {
       bitWrite(orgKeys,18,1);
       bitWrite(orgKeys,19,0);
     }else{
@@ -278,16 +307,15 @@ void loop()
       if (readByte>=numPressedAtOnce+1)return;
     }
   }
-
  
   #if (useSD)
   //IF we hit the three buttons on the right and an additional one it will load a file with the number of the additional key
     if (readByte==4)
     {
-      if (ReadInputBuffer[1]==16 && ReadInputBuffer[2]==17 && ReadInputBuffer[1]==18)
+      if (ReadInputBuffer[1]==16 && ReadInputBuffer[2]==17 && ReadInputBuffer[3]==18)
       {
         readKeyFile(String(ReadInputBuffer[0])+".key");
-        delay(500);
+        delay(200);
       }
     }
   #endif
@@ -312,7 +340,7 @@ void loop()
       tPos=ArrayCounter*6;
       if (keyBoard1[tPos]==ReadInputBuffer[0] && keyBoard1[tPos+1]==ReadInputBuffer[1] && keyBoard1[tPos+2]==ReadInputBuffer[2])
       {
-          #ifdef isInDebug
+          #if (isInDebug)
            debug.print(ReadInputBuffer[0]);
            debug.print("-");
            debug.print(ReadInputBuffer[1]);
@@ -337,11 +365,11 @@ void loop()
               keyIsPressed[ArrayCounter]=1;
               doKeys(tPos);
             }
-          }else if (keyBoard1[tPos+5]==2)
+          }
+          else if (keyBoard1[tPos+5]==2)
           {
               keyIsPressed[ArrayCounter]=1;
           }
-
           else if (keyBoard1[tPos+5]>=10)
           {
             if (keyDelay[ArrayCounter]<millis())
@@ -377,6 +405,7 @@ void loop()
       keyIsPressed[ArrayCounter]=0;
     }
   }
+
 }
 
 
@@ -397,18 +426,19 @@ void doKeys(int tPos){
   if (stdKey!=170)
   {
     Keyboard.press(stdKey);
-    #ifdef isInDebug
+    #if (isInDebug)
       debug.println(keyBoard1[tPos+4]);
     #endif
 
     MouseMoveX=0;
     MouseMoveY=0;
-  }else{
-    
+  }
+  else
+  {
     #if (useJoystick)
       MouseMoveX=joyValX;
       MouseMoveY=joyValY;
-      #ifdef isInDebug
+      #if (isInDebug)
         debug.print(MouseMoveY);
         debug.print("-");
         debug.println(MouseMoveX);
@@ -420,7 +450,6 @@ void doKeys(int tPos){
 //****************************************************
 void doShiftKey(int keyVal)
 {
-  
   switch (keyVal)
   {
     case 1: // Shift
@@ -493,10 +522,12 @@ void stopMouse()
   {
     Mouse.release(MOUSE_LEFT);
   }
+  
   if (Mouse.isPressed(MOUSE_RIGHT)) 
   {
     Mouse.release(MOUSE_RIGHT);
   }
+  
   if (Mouse.isPressed(MOUSE_MIDDLE)) 
   {
     Mouse.release(MOUSE_MIDDLE);
@@ -514,10 +545,10 @@ void readKeys()
   digitalWrite(ploadPin, HIGH);
 
   //Loop through Shift Register
-  for(int i = 0; i < DATA_WIDTH; i++)
+  for(int i = 0; i < bitsToRead; i++)
   {
       bitVal = digitalRead(dataPin);
-      keysPressed |= (bitVal << ((DATA_WIDTH-1) - i));
+      keysPressed |= (bitVal << ((bitsToRead-1) - i));
       digitalWrite(clockPin, HIGH);
       delayMicroseconds(10);
       digitalWrite(clockPin, LOW);
@@ -551,36 +582,54 @@ void readKeys()
 #if (useSD)
   void readKeyFile(String filename)
   {
-    #ifdef isInDebug
-      debug.print("Try to find ");
-      debug.println(filename);
-    #endif  
-    myFile = SD.open(filename);
-    int tCount=0;
-    if (myFile) {
-      // read from the file until there's nothing else in it:
-      while (myFile.available()) 
-      {
-        keyBoard1[tCount]=myFile.read();
-        tCount++;
-        if (!(tCount%6))debug.println();
-      }
-      actNumOfKeyDefinitions=tCount/6;
-      myFile.close();
-      #ifdef isInDebug
-        debug.print(filename);
-        debug.println(" Loaded!");
+    //noInterrupts();
+    //SD.end(); // I don't know why but I have to do it befor SD.Begin if I don't do this it will not work probably on some cards
+    
+    if (!SD.begin(SD_SS))
+    {
+      #if (isInDebug)
+        debug.println("No SD FOUND!");
       #endif
+    }else
+    {
 
-    } else {
-      // if the file didn't open, print an error:
-      #ifdef isInDebug
-      debug.println("File not found!");
-      #endif
+      #if (isInDebug)
+        debug.print("Looking for:");
+        debug.println(filename);
+      #endif  
+      
+      myFile = SD.open(filename);
+      int tCount=0;
+      if (myFile) 
+      {
+        // read from the file until there's nothing else in it:
+        while (myFile.available()) 
+        {
+          keyBoard1[tCount]=myFile.read();
+          tCount++;
+          //if (!(tCount%6))debug.println();
+        }
+        
+        actNumOfKeyDefinitions=tCount/6;
+        myFile.close();
+        #if (isInDebug)
+          debug.print(filename);
+          debug.println(" Loaded!");
+        #endif
+
+      } else {
+        // if the file didn't open, print an error:
+        filename[0]=0;
+        #if isInDebug
+          debug.println("File not found!");
+        #endif
+      }
+      
     }
+    //interrupts();
   }
 #endif
-
+ 
 //****************************************************
 #if (useRotary)
   // Take from https://forum.arduino.cc/index.php?topic=701098.0
@@ -591,94 +640,100 @@ void readKeys()
   switch (encoderState) 
     {
       case STATE_LOCKED:
-        if (a && b) {
+        if (a && b) 
+        {
           encoderState = STATE_UNDECIDED;
         }
-        else if (!a && b) {
+        else if (!a && b) 
+        {
           encoderState = STATE_TURN_LEFT_START;
         }
-        else if (a && !b) {
+        else if (a && !b) 
+        {
           encoderState = STATE_TURN_RIGHT_START;
         }
-        else {
+        else 
+        {
           encoderState = STATE_LOCKED;
         };
         break;
       case STATE_TURN_RIGHT_START:
-        if (a && b) {
+        if (a && b) 
+        {
           encoderState = STATE_TURN_RIGHT_MIDDLE;
         }
-        else if (!a && b) {
+        else if (!a && b) 
+        {
           encoderState = STATE_TURN_RIGHT_END;
         }
-        else if (a && !b) {
+        else if (a && !b) 
+        {
           encoderState = STATE_TURN_RIGHT_START;
         }
-        else {
+        else 
+        {
           encoderState = STATE_LOCKED;
         };
         break;
       case STATE_TURN_RIGHT_MIDDLE:
       case STATE_TURN_RIGHT_END:
-        if (a && b) {
+        if (a && b) 
+        {
           encoderState = STATE_TURN_RIGHT_MIDDLE;
         }
-        else if (!a && b) {
+        else if (!a && b) 
+        {
           encoderState = STATE_TURN_RIGHT_END;
         }
-        else if (a && !b) {
+        else if (a && !b) 
+        {
           encoderState = STATE_TURN_RIGHT_START;
         }
-        else {
+        else 
+        {
           encoderState = STATE_LOCKED;
           delta = -1;
         };
         break;
       case STATE_TURN_LEFT_START:
-        if (a && b) {
+        if (a && b) 
+        {
           encoderState = STATE_TURN_LEFT_MIDDLE;
         }
-        else if (!a && b) {
+        else if (!a && b) 
+        {
           encoderState = STATE_TURN_LEFT_START;
         }
-        else if (a && !b) {
+        else if (a && !b) 
+        {
           encoderState = STATE_TURN_LEFT_END;
         }
-        else {
+        else 
+        {
           encoderState = STATE_LOCKED;
         };
         break;
       case STATE_TURN_LEFT_MIDDLE:
       case STATE_TURN_LEFT_END:
-        if (a && b) {
+        if (a && b) 
+        {
           encoderState = STATE_TURN_LEFT_MIDDLE;
         }
-        else if (!a && b) {
+        else if (!a && b) 
+        {
           encoderState = STATE_TURN_LEFT_START;
         }
-        else if (a && !b) {
+        else if (a && !b) 
+        {
           encoderState = STATE_TURN_LEFT_END;
         }
-        else {
+        else 
+        {
           encoderState = STATE_LOCKED;
           delta = 1;
         };
-        break;
-      case STATE_UNDECIDED:
-        if (a && b) {
-          encoderState = STATE_UNDECIDED;
-        }
-        else if (!a && b) {
-          encoderState = STATE_TURN_RIGHT_END;
-        }
-        else if (a && !b) {
-          encoderState = STATE_TURN_LEFT_END;
-        }
-        else {
-          encoderState = STATE_LOCKED;
-        };
-        break;
-    }
+        break
+        
     return delta;
   }
 #endif
